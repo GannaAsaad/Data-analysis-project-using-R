@@ -1,0 +1,1157 @@
+---
+title: 'From Burgers to Bytes: Unveiling Insights from Comprehensive Data Analysis using R'
+output: html_document
+date: "`r Sys.Date()`"
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+# **Introduction:**
+
+This project unfolds a comprehensive analysis that not only explores the potency of simulated data but also delves into the nuanced impact of simulation across various analytical stages—from descriptive to predictive analytics. the project incorporates EDA, data visualization, rigorous statistical testing, iterative model building, and strategic transformations, and statistical significance in the realm of fast-food data exploration.
+
+# **Objectives:**
+
+-   Studying the efficiency of simulated data
+-   Nutritional Comparison of different fast-food items across various restaurants.
+-   Optimizing menus for nutritional balance and promote consumer well-being.
+
+
+## **Questions of Analysis:**
+
+-   Which restaurant has the highest and lowest average calories per item?
+
+-   What percentage of items can be considered low in total fat or saturated fat?
+
+-   How do different nutritional components correlate with each other?
+
+-   Is there a correlation between the total fat content and the calories of fast-food items?
+
+-   Is there a statistically significant difference in the average nutritional content (e.g., calories, fats, vitamins) between fast-food restaurant items?
+
+-   Can we predict the calorie content of a fast-food item based on its total fat, sugar content, saturated fat and protein content?
+
+-   Is there a causal relationship between the total carbohydrate content of menu items and the level of added sugars?
+
+-   Do high-calorie items cause a lower of dietary Fiber?
+
+-   Is there a causal relationship between the choice of fast-food restaurant and the nutritional components, including total calories, fat content, and vitamin levels?
+
+## **Phases of analysis:**
+
+-   Data Exploration and pre-processing.
+-   Simulation.
+-   Exploratory data analysis.
+-   Inferential analysis.
+-   Building model.
+-   Interpreting the model.
+-   Conclusion.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+file_path <- "C:/Users/hp/Documents"
+file.exists(file_path)
+
+```
+
+# **1- Data Exploration and pre-processing**
+
+```{r,warning=FALSE}
+
+getwd()
+setwd("C:/Users/hp/Documents")
+getwd()
+ff <- read.csv("fastfood.csv")
+```
+
+```{r}
+View(ff)
+dim(ff)
+str(ff)
+```
+
+```{r}
+head(ff)
+tail(ff)
+
+```
+
+
+## **1- Pre-processing:**
+
+Explore the na values
+
+```{r}
+
+sum(is.na(ff))
+
+na_count_per_variable <- colSums(is.na(ff))
+na_count_per_variable
+```
+
+The columns that contain na values are : fiber, vit_a, vit_c, calcium Then, determine the percentage of na values in each variable
+
+```{r}
+na_percentage_per_variable <- colMeans(is.na(ff))* 100
+na_percentage_per_variable
+```
+
+To impute the missing values, install mice package to appply iterative imputer
+
+```{r,warning=FALSE}
+library(mice)
+```
+
+Iterative imputer for 5 iterations
+
+```{r}
+im <- mice(ff, m = 5)
+ff_im <- complete(im)
+
+```
+
+Check the result of imputation
+
+```{r}
+sum(is.na(ff_im))
+```
+
+Then, Lets drop the unrelevant columns
+
+
+ff_im <- subset(ff_im, select = -Column1, -salad)
+
+
+
+
+```{r}
+names(ff_im)
+```
+
+Check if there is a variable that needs to be coded
+
+```{r}
+unique(ff_im$restaurant)
+```
+
+```{r,include=FALSE }
+unique(ff_im$item)
+```
+
+Then, we will encode the categorical variable "resturant" to help in analysis
+
+```{r}
+ff_im$restaurant_coded <- match(ff_im$restaurant, c("Mcdonalds", "Chick Fil-A", "Sonic", "Arbys", "Burger King", "Dairy Queen", "Subway", "Taco Bell")) 
+```
+
+```{r}
+unique(ff_im$restaurant_coded)
+```
+
+```{r,warning=FALSE}
+library(dplyr)
+```
+
+```{r,warning=FALSE}
+library(patchwork)
+```
+
+# **2- Simulation**
+
+What is simulation?
+and why we need it?
+Simulation imitate the operation of real-world processes or systems over time.
+It involves creating a mathematical model to replicate complex systems and then studying the behavior of these systems by running simulations.
+
+## First:
+
+Explore the numerical variables using Histogram for each variable to show it's distribution among the data
+
+```{r}
+library(ggplot2)
+variables_list <- c( "total_fat", "sat_fat","total_carb", "fiber", "sugar",
+                    "protein", "vit_a", "vit_c", "calcium", "trans_fat", "calories", "cal_fat", "cholesterol")
+
+# Create histograms for each variable using ggplot2 with increased bins
+for (variable in variables_list) {
+  p <- ggplot(ff_im, aes(x = !!sym(variable))) +
+    geom_histogram(binwidth = 10, fill = "lightblue", color = "black", alpha = 0.7) +
+    labs(title = paste("Histogram of", variable),
+         x = variable,
+         y = "Frequency") +
+    theme_minimal()
+  
+  print(p)
+}
+```
+
+It is notable that all the values of the numerical variables are skewed right.
+
+## Second:
+
+Therefore, We have to transform the data to be normally distribution before simulating.
+
+Using the box cox, which is a family of power transformations used to stabilize variance and make data more closely follow a normal distribution.
+In R, the boxcox function is typically used to perform this transformation.
+This function is part of the MASS package, which is one of the standard packages in R for statistical methods.
+
+
+library(MASS)
+
+apply_cox_box <- function(data, variable, constant = 1) {
+  transformed_data <- boxcox(data[[variable]] + constant, lambda = "guerrero", plotit = FALSE)$y
+  return(transformed_data)
+}
+
+numerical_vars <- c('calories', 'cal_fat', 'total_fat', 'sat_fat', 'trans_fat', 
+                    'cholesterol', 'sodium', 'total_carb', 'fiber', 'sugar', 'protein')
+
+ff_transformed <- ff
+for(var in numerical_vars) {
+  if(any(ff[[var]] <= 0)) {
+    ff_transformed[[var]] <- apply_cox_box(ff, var)
+  } else {
+    ff_transformed[[var]] <- boxcox(ff[[var]], lambda = "guerrero", plotit = FALSE)$y
+  }
+}
+
+
+## Third:
+
+Uploading The transformed data that follows the normal distribution:
+
+```{r}
+file_path <- "C:/Users/hp/Documents"
+file.exists(file_path)
+```
+
+```{r}
+
+setwd("C:/Users/hp/Documents")
+FF <- read.csv("FF_cleaned.csv")
+```
+
+## Fourth:
+
+Since the data has been transformed, we will follow the normal distribution **rnorm function**
+
+## Fifth: Simmulation
+
+1- Find the means and standarad deviations of the transformed data
+
+```{r}
+library(dplyr)
+FF %>% 
+  select_if(is.numeric) %>%  
+  summarise_all(list(mean = ~mean(., na.rm = TRUE), sd = ~sd(., na.rm = TRUE)))
+FF <- FF %>% mutate(restaurant_coded = as.numeric(factor(restaurant)))
+```
+
+Adding a encoded column to the restaurant variable
+
+```{r}
+table(FF$restaurant_coded) / length(FF$restaurant_coded)
+```
+
+```{r}
+set.seed(321)
+n = 515
+iter = 5000
+rest <- replicate(n , {sample(1:8, 1, T, c(0.10679612, 0.13592233, 0.05242718, 0.08155340, 0.11067961, 0.10291262,0.18640777, 0.2233009))})
+calr <- replicate(iter, { rnorm(n,20.41748, 4.455409)})
+cal_fat <- replicate(iter, { rnorm(n,14.73825, 4.163103)})
+tot_fat <- replicate(iter, {rnorm(n,4.94729 , 1.532233)})
+st_fat <- replicate(iter, {rnorm(n,2.301147, 0.8087298)})
+tran_fat <- replicate(iter, {rnorm(n,0.3251048, 0.02598805)})
+coles <- replicate(iter, {rnorm(n,8.807853, 2.66724)})
+sod <- replicate(iter, {rnorm(n,32.75514, 7.075672)})
+tot_carb <- replicate(iter, {rnorm(n,11.71882 , 3.968737)})
+fib <- replicate(iter, {rnorm(n,1.587206 , 0.5495661)})
+sug <- replicate(iter, {rnorm(n,2.377515,0.8575339)})
+prot <- replicate(iter, {rnorm(n,3.712654,0.7365731)})
+va <- replicate(iter, {rnorm(n,17.50291,27.12447)})
+vc <- replicate(iter, {rnorm(n,17.83107,28.07793)})
+cal <- replicate(iter, {rnorm(n,18.19223,12.03577)})
+
+# rest, calr, cal_fat, tot_fat, st_fat, tran_fat, coles,  sod, tot_carb, fib, sug,prot, va, vc, cal)
+sm_FF <- data.frame(FF$item,
+                    sm_restaurant = rest,
+                    sm_calories = rowMeans(calr),
+                    sm_calories_fat = rowMeans(cal_fat),
+                    sm_tot_fat = rowMeans(tot_fat),
+                    sm_saturate_fat = rowMeans(st_fat),
+                    sm_transmited_fat = rowMeans(tran_fat),
+                    sm_cholesterol = rowMeans(coles),
+                    sm_sodium = rowMeans(sod),
+                    sm_total_carb = rowMeans(tot_carb),
+                    sm_fiber = rowMeans(fib),
+                    sm_sugar = rowMeans(sug),
+                    sm_protein = rowMeans(prot),
+                    sm_vit_a= rowMeans(va),
+                    sm_vit_c = rowMeans(vc),
+                    sm_calcium = rowMeans(cal))
+
+
+
+
+```
+
+Renaming the resturant variable
+
+```{r}
+# Define the true restaurant names
+true_names <- c("Mcdonalds", "Chick Fil-A", "Sonic", "Arbys", "Burger King", "Dairy Queen", "Subway", "Taco Bell")
+
+# Rename the levels of sm_restaurant in sm_FF
+sm_FF$sm_restaurant <- factor(sm_FF$sm_restaurant, levels = 1:8, labels = true_names)
+
+```
+
+exploring the difference between the means and standard deviation of the 2 data sets.
+
+```{r}
+print(apply(sm_FF[,3:15], 2, mean))
+print(apply(sm_FF[,3:15], 2, sd))
+print(apply(FF[,3:15], 2, mean))
+print(apply(FF[,3:15], 2, sd))
+```
+
+# Exploratory data analysis:
+
+#### Let's Explore the transformed data, and simulated data:
+
+```{r}
+head(FF)
+head(sm_FF)
+```
+
+```{r}
+names(FF)
+```
+
+```{r}
+names(sm_FF)
+```
+
+------------------------------------------------------------------------
+
+#### First, for the only categorical variable "Restaurant", lets do a bar chart:
+
+```{r}
+library(ggplot2)
+library(patchwork)
+```
+
+```{r}
+
+# Assuming "Restaurant" is the variable in both data frames
+# Create bar chart for FF data
+plot_ff <- ggplot(FF, aes(x = FF$restaurant)) +
+  geom_bar(fill = "skyblue", color = "black", alpha = 0.7) +
+  labs(title = "Bar Chart for Restaurant in FF Data",
+       x = "Restaurant",
+       y = "Count") +
+  theme_minimal()
+
+# Create bar chart for sm_FF data
+plot_sm_ff <- ggplot(sm_FF, aes(x = sm_FF$sm_restaurant)) +
+  geom_bar(fill = "lightgreen", color = "black", alpha = 0.7) +
+  labs(title = "Bar Chart for Restaurant in sm_FF Data",
+       x = "Restaurant",
+       y = "Count") +
+  theme_minimal()
+
+# Arrange plots side by side
+combined_plots <- plot_ff + plot_sm_ff
+
+# Display the combined plots
+combined_plots
+
+```
+
+ From the bar chart, we conclude that the "Taco Bell" is the highest distributed , and Arbys is the least distributed.
+
+#### Second, Let explore the numerical variables using Histogram and box plot for each variable to show it's distribution among the data.
+
+#### **Histograms for the original data**
+
+```{r}
+variables_list <- c( "total_fat", "sat_fat","total_carb", "fiber", "sugar",
+                    "protein")
+
+# Create histograms for each variable using ggplot2 with increased bins
+for (variable in variables_list) {
+  p <- ggplot(FF, aes(x = !!sym(variable))) +
+    geom_histogram(binwidth = 0.5, fill = "lightblue", color = "black", alpha = 0.7) +
+    labs(title = paste("Histogram of", variable),
+         x = variable,
+         y = "Frequency") +
+    theme_minimal()
+  
+  print(p)
+  
+  
+}
+```
+
+```{r}
+variables_list <- c( "vit_a", "vit_c", "calcium")
+
+# Create histograms for each variable using ggplot2 with increased bins
+for (variable in variables_list) {
+  p <- ggplot(FF, aes(x = !!sym(variable))) +
+    geom_histogram(binwidth = 5, fill = "lightblue", color = "black", alpha = 0.7) +
+    labs(title = paste("Histogram of", variable),
+         x = variable,
+         y = "Frequency") +
+    theme_minimal()
+  
+  print(p)
+  
+  
+}
+```
+
+
+#### For the Simmulated data numerical variables:
+
+```{r}
+variables_list <- c( "sm_tot_fat", "sm_saturate_fat","sm_total_carb", "sm_fiber", "sm_sugar", "sm_protein")
+
+# Create histograms for each variable using ggplot2 with increased bins
+for (variable in variables_list) {
+  p <- ggplot(sm_FF, aes(x = !!sym(variable))) +
+    geom_histogram(binwidth = 0.005, fill = "lightblue", color = "black", alpha = 0.7) +
+    labs(title = paste("Histogram of", variable),
+         x = variable,
+         y = "Frequency") +
+    theme_minimal()
+  
+  print(p)
+}
+  
+```
+
+Comparing the most important variables in the 2 data sets: 1- "total fat" variable
+
+```{r}
+f1 <- ggplot(FF, aes(total_fat)) + geom_histogram(bins = 30)
+f2 <- ggplot(sm_FF, aes(sm_tot_fat)) + geom_histogram(bins = 30)
+
+f1+f2
+```
+
+2- "calories" variable
+
+```{r}
+c1 <- ggplot(FF, aes(calories)) + geom_histogram(bins = 30)
+c2 <- ggplot(sm_FF, aes(sm_calories)) + geom_histogram(bins = 30)
+c1+c2
+```
+
+3- "total carb" variable
+
+```{r}
+b1 <- ggplot(FF, aes(total_carb)) + geom_histogram(bins = 30)
+b2 <- ggplot(sm_FF, aes(sm_total_carb)) + geom_histogram(bins = 30)
+
+b1+b2
+```
+
+From the graphs of the 3 previous variables, It is clear that the new simmulated data follows normal distribution as the transformed one.
+
+It appears that all the values of the numerical variables are skewed right.
+
+#### 2- Box plots:
+
+-   for the original data
+
+```{r}
+# Load the ggplot2 package
+library(ggplot2)
+
+# Subset the data to include only the specified variables
+selected_vars <- c("total_fat", "sat_fat",
+                    "cholesterol", "total_carb", "fiber", "sugar",
+                    "protein")
+
+# Create a box plot for each variable
+boxplot_data <- stack(FF[selected_vars])
+
+# Plot the side-by-side box plots
+ggplot(boxplot_data, aes(x = ind, y = values)) +
+  geom_boxplot(fill = "lightblue", color = "black", alpha = 0.7, width = 0.7) +
+  labs(title = "Box Plots for Selected Variables",
+       x = "Variables",
+       y = "Values") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank())  # Remove the grid
+
+
+```
+
+```{r}
+# Load the ggplot2 package
+library(ggplot2)
+
+# Subset the data to include only the specified variables
+selected_vars2 <- c( "vit_a", "vit_c", "calcium")
+
+# Create a box plot for each variable
+boxplot_data <- stack(FF[selected_vars2])
+
+# Plot the side-by-side box plots
+ggplot(boxplot_data, aes(x = ind, y = values)) +
+  geom_boxplot(fill = "lightblue", color = "black", alpha = 0.7, width = 0.7) +
+  labs(title = "Box Plots for Selected Variables",
+       x = "Variables",
+       y = "Values") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank())  # Remove the grid
+
+```
+
+
+-   Box plot for the Simulated data
+
+
+```{r}
+# Load the ggplot2 package
+library(ggplot2)
+
+# Subset the data to include only the specified variables
+selected_vars <- c("sm_tot_fat", "sm_saturate_fat","sm_total_carb", "sm_fiber", "sm_sugar", "sm_protein")
+
+# Create a box plot for each variable
+boxplot_data <- stack(sm_FF[selected_vars])
+
+# Plot the side-by-side box plots
+my_plot<- ggplot(boxplot_data, aes(x = ind, y = values)) +
+  geom_boxplot(fill = "lightblue", color = "black", alpha = 0.7, width = 0.9) +
+  labs(title = "Box Plots for Selected Variables",
+       x = "Variables",
+       y = "Values") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1),
+        panel.grid = element_blank())  # Remove the grid
+ggsave("my_boxplot.png", plot = my_plot, height = 40, width = 40)
+my_plot
+```
+
+
+```{r}
+# Load the ggplot2 package
+library(ggplot2)
+
+# Subset the data to include only the specified variables
+selected_vars <- c("sm_vit_a", "sm_vit_c", "sm_calcium")
+
+# Create a box plot for each variable
+boxplot_data <- stack(sm_FF[selected_vars])
+
+# Plot the side-by-side box plots
+ggplot(boxplot_data, aes(x = ind, y = values)) +
+  geom_boxplot(fill = "lightblue", color = "black", alpha = 0.7, width = 0.9) +
+  labs(title = "Box Plots for Selected Variables",
+       x = "Variables",
+       y = "Values") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1),
+        panel.grid = element_blank())  # Remove the grid
+
+```
+
+
+
+#### Third: Let's explore the categorical variable "restaurant" on the data set.
+
+```{r}
+percentage_data <- FF %>%
+  group_by(restaurant) %>%
+  summarise(count = n())
+
+percentage_data$percentage <- percentage_data$count / sum(percentage_data$count) * 100
+
+restaurant_percentage <- ggplot(percentage_data, aes(x = "", y = "", fill = restaurant)) +
+  geom_bar(width = 2, color = "white", stat = "identity") +
+  coord_polar("y", start = 0) +
+  labs(title = "Restaurants",
+       fill = "Restaurant Name") +
+  theme_minimal() +
+  theme(legend.position = "bottom") +  
+  geom_text(aes(label = paste0(round(percentage, 1), "%")),
+            position = position_stack(vjust = 0.5))
+
+
+
+
+
+
+```
+
+```{r}
+percentage_data2 <- sm_FF %>%
+  group_by(sm_restaurant) %>%
+  summarise(count = n())
+
+percentage_data2$percentage <- percentage_data2$count / sum(percentage_data2$count) * 100
+
+restaurant_percentage2 <- ggplot(percentage_data2, aes(x = "", y = "", fill = sm_restaurant)) +
+  geom_bar(width = 2, color = "white", stat = "identity") +
+  coord_polar("y", start = 0) +
+  labs(title = "Restaurants",
+       fill = "Restaurant Name") +
+  theme_minimal() +
+  theme(legend.position = "bottom") +  
+  geom_text(aes(label = paste0(round(percentage, 1), "%")),
+            position = position_stack(vjust = 0.5))
+
+
+
+```
+
+```{r}
+restaurant_percentage + restaurant_percentage2
+```
+
+#### Fourth: Exploring the data in details
+
+1- In the 2 data sets, Comparing the restaurants that has the highest number of items in its menu
+
+```{r}
+menu_counts1 <- FF %>% 
+  group_by(restaurant) %>% 
+  summarise(num_items = n())
+
+# Find the restaurant with the highest number of items
+max_items_restaurant1 <- menu_counts1[which.max(menu_counts1$num_items), ]
+max_items_restaurant1
+
+
+menu_counts2 <- sm_FF %>% 
+  group_by(sm_restaurant) %>% 
+  summarise(num_items = n())
+
+# Find the restaurant with the highest number of items
+max_items_restaurant2 <- menu_counts2[which.max(menu_counts2$num_items), ]
+max_items_restaurant2
+
+
+```
+
+ -Taco bell has the most items containing 115 items in original data but 110 in the simulated data.
+
+2- from the 2 datasets, Comparing the distribution of total carbohydrates vary across different restaurants on the 2 data.
+
+```{r}
+m<-ggplot(FF, aes(x = restaurant, y = total_carb, fill = restaurant)) +
+  geom_bar(stat = "identity",  alpha = 0.7) +
+  labs(title = "Total Carbohydrates Across Restaurants in original data",
+       x = "Restaurant Name",
+       y = "Total Carbohydrates") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+mm<-ggplot(sm_FF, aes(x = sm_restaurant, y = sm_total_carb, fill = sm_restaurant)) +
+  geom_bar(stat = "identity",  alpha = 0.7) +
+  labs(title = "Total Carbohydrates Across Restaurants in simulated data",
+       x = "Restaurant Name",
+       y = "Total Carbohydrates") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+m+mm
+```
+
+It appears that Taco bell's items have the highest carbohydrates among all the restaurants in the data set.
+
+3- compare between the number of items from each restaurant cater to customers with dietary restrictions, such as low-sodium or low-cholesterol options in each data set.
+
+```{r}
+library(dplyr)
+filter_lowest_20_percent1 <- function(x) {
+  threshold1 <- quantile(x, 0.2)
+  return(x <= threshold1)
+}
+
+# Filter items with low-sodium and low-cholesterol options
+restricted_items1 <- FF %>%
+  filter(filter_lowest_20_percent1(sodium), filter_lowest_20_percent1(cholesterol))
+
+# Count the number of items from each restaurant
+items_per_restaurant1 <- restricted_items1 %>%
+  group_by(restaurant) %>%
+  summarise(num_items = n())
+
+# Print the result
+print(items_per_restaurant1)
+
+filter_lowest_20_percent2 <- function(x) {
+  threshold2 <- quantile(x, 0.2)
+  return(x <= threshold2)
+}
+
+# Filter items with low-sodium and low-cholesterol options
+restricted_items2 <- sm_FF %>%
+  filter(filter_lowest_20_percent2(sm_sodium), filter_lowest_20_percent2(sm_cholesterol))
+
+# Count the number of items from each restaurant
+items_per_restaurant2 <- restricted_items2 %>%
+  group_by(sm_restaurant) %>%
+  summarise(num_items = n())
+
+# Print the result
+print(items_per_restaurant2)
+
+```
+
+for the original data : The restaurant that serves the highest number of items with low-sodium and low-cholesterol is Taco Bell and then Subway.
+But by comparing: This concludes that number of items from each restaurant with low-sodium and low-cholesterol options differs majorly in the 2 data sets.
+
+4- The restaurant has the highest and lowest average calories per item.
+
+```{r}
+average_calories <- FF %>%
+  group_by(restaurant) %>%
+  summarise(avg_calories = mean(calories, na.rm = TRUE))
+
+# Find the restaurant with the highest average calories
+max_calories_restaurant <- average_calories[which.max(average_calories$avg_calories), ]
+
+# Find the restaurant with the lowest average calories
+min_calories_restaurant <- average_calories[which.min(average_calories$avg_calories), ]
+
+print(max_calories_restaurant)
+print(min_calories_restaurant)
+
+
+
+average_calories2 <- sm_FF %>%
+  group_by(sm_restaurant) %>%
+  summarise(avg_calories2 = mean(sm_calories, na.rm = TRUE))
+
+# Find the restaurant with the highest average calories
+max_calories_restaurant2 <- average_calories2[which.max(average_calories2$avg_calories2), ]
+
+# Find the restaurant with the lowest average calories
+min_calories_restaurant2 <- average_calories2[which.min(average_calories2$avg_calories2), ]
+
+print(max_calories_restaurant2)
+print(min_calories_restaurant2)
+```
+
+In the original data: Chick Fil-A is the min calories restaurant McDonald is the maximum calories restaurant.
+by comparing the 2 data sets we conclude that the difference between the maximum and minimum calories restaurants is slightly low.
+
+5- Restaurants that specifically focus on offering items rich in vitamins 6- The highest item rich in vitamins
+
+```{r}
+threshold_vit_a <- quantile(FF$vit_a, 0.8)  # 80th percentile
+threshold_vit_c <- quantile(FF$vit_c, 0.8)  # 80th percentile
+threshold_calcium <- quantile(FF$calcium, 0.8)  # 80th percentile
+
+# Filter and select relevant columns for items rich in vitamins A and C, as well as calcium
+rich_items <- FF %>%
+  filter(vit_a >= threshold_vit_a, vit_c >= threshold_vit_c, calcium >= threshold_calcium) %>%
+  select(item,restaurant,vit_a,vit_c,calcium)
+
+highest_rich_item <- rich_items[which.max(rich_items$vit_a + rich_items$vit_c + rich_items$calcium), ]
+
+print(highest_rich_item)
+print(rich_items)
+
+
+
+threshold_vit_a1 <- quantile(sm_FF$sm_vit_a, 0.8)  # 80th percentile
+threshold_vit_c1 <- quantile(sm_FF$sm_vit_c, 0.8)  # 80th percentile
+threshold_calcium1 <- quantile(sm_FF$sm_calcium, 0.8)  # 80th percentile
+
+# Filter and select relevant columns for items rich in vitamins A and C, as well as calcium
+rich_items1 <- sm_FF %>%
+  filter(sm_vit_a >= threshold_vit_a1, sm_vit_c >= threshold_vit_c1, sm_calcium >= threshold_calcium1) %>%
+  select(FF.item,sm_restaurant,sm_vit_a,sm_vit_c,sm_calcium)
+
+highest_rich_item1 <- rich_items1[which.max(rich_items1$sm_vit_a + rich_items1$sm_vit_c + rich_items1$sm_calcium), ]
+
+print(highest_rich_item1)
+print(rich_items1)
+```
+
+FOr the original data: - The Restaurants that specifically focus on offering items rich in vitamins is Burger king.
+- The highest item rich in vitamins is Bacon Cheeseburger Deluxe by comparing the 2 data sets, The Restaurants that specifically focus on offering items rich in vitamins is subway.
+- The highest item rich in vitamins is BK VEGGIE Burger,Footlong Sweet Onion Chicken Teriyaki,and Cantina Power Burrito - Chicken
+
+7- Items that contain zero sugar
+
+```{r}
+# Load the dplyr package
+library(dplyr)
+
+# Assuming 'FF' is your data frame and 'sugar' is the variable representing sugar content
+items_with_zero_sugar <- FF %>% 
+  filter(sugar == 0)
+
+# View the items with zero sugar
+print(items_with_zero_sugar)
+print (count(items_with_zero_sugar))
+
+
+
+# Load the dplyr package
+library(dplyr)
+
+# Assuming 'ff_im' is your data frame and 'sugar' is the variable representing sugar content
+items_with_zero_sugar1 <- sm_FF %>% 
+  filter(sm_sugar == 0)
+
+# View the items with zero sugar
+print(items_with_zero_sugar1)
+print (count(items_with_zero_sugar1))
+```
+
+comparing the 2 datasets: There is no items of zero sugar in the restaurants available in the 2 data set.
+
+------------------------------------------------------------------------
+
+# **3- Exploratory data analysis**
+
+Explore if the different nutritional components correlate with each other
+
+```{r}
+# Install and load necessary packages if not already installed
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  install.packages("ggplot2")
+}
+
+if (!requireNamespace("corrplot", quietly = TRUE)) {
+  install.packages("corrplot")
+}
+
+# Load packages
+library(ggplot2)
+library(corrplot)
+
+# Assuming your data frame is named ff_im
+variables <- c('calories', 'cholesterol', 'total_fat', 'sodium', 'protein', 'total_carb', 'fiber', 'sugar', 'vit_a', 'vit_c', 'calcium')
+
+# Calculate the correlation matrix
+correlation_matrix <- cor(FF[, variables])
+
+# Set the size of the plot
+figure_size <- c(20, 15)
+
+# Create a heatmap using corrplot
+c<- corrplot(correlation_matrix, method = "color", col = colorRampPalette(c('white', 'darkblue'))(25),
+         addCoef.col = "lightblue", number.cex = 0.77, tl.cex = 0.88)
+
+
+
+
+# Assuming your data frame is named ff_im
+variables1 <- c('sm_calories', 'sm_cholesterol', 'sm_tot_fat', 'sm_sodium', 'sm_protein', 'sm_total_carb', 'sm_fiber', 'sm_sugar', 'sm_vit_a', 'sm_vit_c', 'sm_calcium')
+
+# Calculate the correlation matrix
+correlation_matrix1 <- cor(sm_FF[, variables1])
+
+# Set the size of the plot
+figure_size1 <- c(20, 15)
+
+# Create a heatmap using corrplot
+c1<- corrplot(correlation_matrix1, method = "color", col = colorRampPalette(c('white', 'darkblue'))(25),
+         addCoef.col = "lightblue", number.cex = 0.77, tl.cex = 0.88)
+
+
+```
+
+In the original data:
+
+-   The highest positive correlation is between cholesterol and protien=0.83, while it is 0.04 in the simulated data.
+-   The lowest negative correlation is between sugar and cholestrol, fiber and calories, fiber and protein = -0.09
+
+In the simulated data:
+
+-   The highest positive correlation is between cholesterol and sugar= 0.07
+-   The lowest negative correlation is between vitamin a and total carb = -0.08
+
+
+#### comparing between the 2 data sets in exploring if there is a correlation between the total fat content and the calories of fast-food items
+
+```{r}
+library(ggplot2)
+
+# Assuming your data frame is named ff_im
+# Assuming you have columns like 'total_fat', 'calories'
+
+# Scatter plot with regression line and correlation text
+ggplot(FF, aes(x = total_fat, y = calories)) +
+  geom_point() +
+  labs(title = "Scatter Plot: Total Fat vs. Calories",
+       x = "Total Fat (g)",
+       y = "Calories") +
+  theme_minimal() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  geom_text(aes(label = sprintf("Correlation: %.2f", cor(total_fat, calories))),
+            x = max(FF$total_fat), y = max(FF$calories), hjust = 1, vjust = 1, size = 4)
+# Assuming your data frame is named ff_im
+# Assuming you have columns like 'total_fat', 'calories'
+
+# Perform a correlation test
+correlation_test <- cor.test(FF$total_fat, FF$calories)
+
+# Print the test results
+print(correlation_test)
+
+
+
+# Scatter plot with regression line and correlation text
+ggplot(sm_FF, aes(x = sm_tot_fat, y = sm_calories)) +
+  geom_point() +
+  labs(title = "Scatter Plot: Total Fat vs. Calories",
+       x = "Total Fat (g)",
+       y = "Calories") +
+  theme_minimal() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  geom_text(aes(label = sprintf("Correlation: %.2f", cor(sm_tot_fat, sm_calories))),
+            x = max(sm_FF$sm_tot_fat), y = max(sm_FF$sm_calories), hjust = 1, vjust = 1, size = 4)
+# Assuming your data frame is named ff_im
+# Assuming you have columns like 'total_fat', 'calories'
+
+# Perform a correlation test
+correlation_test1 <- cor.test(sm_FF$sm_tot_fat, sm_FF$sm_calories)
+
+# Print the test results
+print(correlation_test1)
+
+
+
+```
+
+IN the original data set:
+- correlation coefficient of 0.01 indicates a very weak positive correlation between total fat content and calories.
+  This means that, in general, as the total fat content of fast-food items increases with 0.01.
+- IN the simmulated data, correlation coefficient of -0.03 indicates a negative weak correlation between total fat content and calories.
+  This means that, in general, as the total fat content of fast-food items decreases with 0.03
+
+------------------------------------------------------------------------
+
+# **4- Inferential analysis**
+
+inferential analysis
+
+1.  Inferring the significant differences in the average calories content among different restaurants
+
+#### **One-Way ANOVA**
+
+ H0:All group means are equal
+
+ H1: at least one group means are different
+
+```{r}
+# Annova for original data
+summary(aov(calories ~ restaurant, data = FF))
+#Annova for simulated data
+
+summary(aov(sm_calories ~ sm_restaurant, data = sm_FF))
+```
+
+**p value\>alpha** Accept H0(all group means are equal )
+
+```{r}
+# Boxplot for One-Way ANOVA
+library(ggplot2)
+
+# Assuming your data frame is 'df', with a continuous variable 'response' 
+# and a grouping variable 'group'
+ggplot(FF, aes(x = restaurant, y = calories, fill = restaurant)) +
+    geom_boxplot() +
+    theme_minimal() +
+    labs(title = "Boxplot of Response by Group", x = "restaurant", y = "calories")
+
+```
+
+```{r}
+# Boxplot for One-Way ANOVA
+library(ggplot2)
+
+# Assuming your data frame is 'df', with a continuous variable 'response' 
+# and a grouping variable 'group'
+ggplot(sm_FF, aes(x = sm_restaurant, y = sm_calories, fill = sm_restaurant)) +
+    geom_boxplot() +
+    theme_minimal() +
+    labs(title = "Boxplot of Response by Group", x = "restaurant", y = "calories")
+```
+
+# **5- Predictive analysis- Building Model**
+
+- Predicting the sodium content of a fast-food item based on its carbohydrates and sugar content.
+The dependent: sodium
+Independent: sugar and total_carb
+
+```{r}
+sodium_model <- lm(sodium ~ total_carb + sugar, data = FF)
+
+print(summary(sodium_model))
+
+sodium_model2 <- lm(sm_sodium ~ sm_total_carb + sm_sugar, data = sm_FF)
+
+print(summary(sodium_model2))
+
+
+```
+
+#### Interpretation:
+
+The R-squared data in the original data is 0.4925 while it is -0.0003643 in the simmulated data.
+THis means that, 
+In the original data set:
+A high F-statistic and a low p-value (2.2e-16) suggest that at least one of the predictors is significantly related to the response variable.
+49% of the variation in the sodium can be explained by sugar and cholestrol.
+-     'total_carb'is significant predictor of sodium content as p-value< alpha, while the sugar isn't significant.
+
+In the simulated data set:
+
+  A high F-statistic and a low p-value (0.4046) suggest that at least one of the predictors is significantly related to the response variable.
+-0.036% of the variation in the sodium can be explained by sugar and cholestrol.
+-     'total_carb' and sugar are significant predictors of sodium content as p-value< alpha
+
+
+
+**Graphing the 2 Models to study the linear regression assumptions:**
+
+```{r}
+library(ggfortify)
+    print(autoplot(sodium_model))
+
+   print(autoplot(sodium_model2))
+```
+
+### Graphs Interpretation:
+
+-   From the Residuals vs fitted values: It appears that there is hetroscadisity and non_linearity.
+-   From the Q-Q plot: the graph is heavy-tailed, no normality on the model.
+-   fitted values vs sqr(residuals): We observe a pattern in the plot, we need to consider addressing issues related to heteroscedasticity.
+
+**for Residuals analysis:** - From the Residuals vs leverage: observations that fall outside the dashed lines, which represent a way for identifying influential observations.
+
+**Using log transformation to handle the linearity problem in the originAL DATA:**
+
+```{r}
+sodium_model_log <- lm(log(sodium + 1) ~ total_carb + sugar, data = FF)
+summary(sodium_model_log)
+
+
+
+```
+
+```{r}
+autoplot(sodium_model_log)
+```
+
+```{r}
+names(FF)
+```
+
+
+#### 2- Predicting the calorie content of a fast-food item based on its sugar and total fat content:
+
+```{r}
+library(ggplot2)
+library(ggfortify)
+protein_model <- lm(calories ~ total_fat + sugar, data = FF)
+
+summary(protein_model)
+
+protein_model1 <- lm(sm_calories ~ sm_tot_fat + sm_sugar, data = sm_FF)
+
+summary(protein_model1)
+```
+
+#### Interpretation:
+
+
+The R-squared data in the original data is -0.003445 while it is -0.0004655  in the simmulated data.
+THis means that, 
+In the original data set:
+A low F-statistic and a high p-value (2.2e-16) suggest that the predictors can't be significantly related to the response variable.
+-  -0.034% of the variation in the calories can be explained by sugar and total fats.
+-     'total fat' and sugar aren't significant predictors of calories content as p-value> alpha.
+
+In the simulated data set:
+
+  A high F-statistic and a low p-value (0.4046) suggest that at least one of the predictors is significantly related to the response variable.
+-  -0.0465% of the variation in the calories can be explained by sugar and total fat
+-     'total_carb' and sugar aren't significant predictors of calories content as p-value> alpha
+
+**Graphing the Model to study the linear regression assumptions:**
+
+```{r}
+library(ggfortify)
+autoplot(protein_model)
+
+autoplot(protein_model1)
+```
+
+#### Graphs Interpretation:
+
+Comparing the 2 graphs: both the data sets models have almost normal distribution and the rest of graphs are nearly equal in thier interpretation.
+- From the Residuals vs fitted values: It appears that there is hetroscadisity and non_linearity.
+- From the Q-Q plot: the graph is heavy-tailed, no normality on the model.
+- fitted values vs sqr(residuals): We observe a pattern in the plot, we need to consider addressing issues related to heteroscedasticity.
+
+**for Residuals analysis:** - From the Residuals vs leverage: observations that fall outside the dashed lines, which represent a way for identifying influential observations.
+
+3- predicting the total fat content of a fast-food item based on its calories from fats and saturated fat content?
+
+```{r}
+cholesterol_model <- lm(cholesterol ~ trans_fat  + sat_fat, data = FF)
+
+summary(cholesterol_model)
+
+cholesterol_model1 <- lm(sm_cholesterol ~ sm_transmited_fat + sm_saturate_fat, data = sm_FF)
+
+summary(cholesterol_model1)
+
+```
+
+#### Interpretation:
+
+-   The model suggests that 'trans_fat' and 'total_fat' are highly significant predictors of cholesterol content in fast-food items.
+
+-   For every one-unit increase in 'trans_fat', the model predicts an average increase in cholesterol content of 18.3042 units.
+
+-   For every one-unit increase in 'total_fat', the model predicts an average increase in cholesterol content of 1.9860 units.
+
+'sat_fat' does not appear to have a statistically significant (p-value \> 0.05) impact on cholesterol content in this model.
+
+-   The adjusted R-squared indicates that the model explains about 68.60% of the variability in cholesterol content.
+
+-   The overall significance of the model is tested using the F-statistic.
+    A high F-statistic (375.3) and a low p-value (here, \< 2.2e-16) suggest that at least one of the predictors is significantly related to the response variable.
+
+**Graphing the Model to study the linear regression assumptions:**
+
+```{r}
+autoplot(cholesterol_model)
+autoplot(cholesterol_model1)
+```
+
+#### Graphs Interpretation:
+
+-   From the Residuals vs fitted values: It appears that there is hetroscadisity and non_linearity because there is a pattern
+-   From the Q-Q plot: the graph is heavy-tailed,and there is no normality on the model.
+-   fitted values vs sqr(residuals): We observe a pattern in the plot, we need to consider addressing issues related to heteroscedasticity.
+
+**for Residuals analysis:** - From the Residuals vs leverage: observations that fall outside the dashed lines, which represent a way for identifying influential observations.
+
+
+# **6- Conclusion**
+
+After conducting simulation, we found that the simulated data succeeded to mirror the actual data in the EDA as the results were close to the original data results.The simmulated data accurately captured the real data's distribution, structure, and shape. But looking to the predictive models, there were a remarkable difference in the models inference level and their residual analysis as well. 
+After conducting the analysis, it is clear that fast food generally tends to be unhealthy, as it is often high in sodium, sugar, cholesterol, total fat, and trans fats. However, despite these concerns, the exploratory analysis also reveals that there are relatively healthier options available within the realm of fast food. Overall, while fast food as a whole is associated with health risks, it is possible to make healthier choices within this category. It is important for individuals to be mindful of their food choices,considering lower-sodium and lower-sugar options, and the nutritional content of the available fast food items to make more informed decisions about their meals.
